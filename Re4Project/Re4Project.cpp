@@ -1,20 +1,93 @@
-// Re4Project.cpp : This file contains the 'main' function. Program execution begins and ends there.
-//
+#include <windows.h>
+#include <psapi.h>
+#include <tlhelp32.h>
+#include <cstdio>
 
-#include <iostream>
+DWORD ObterPIDPorNome(const wchar_t* nomeProcesso) {
+	DWORD pid = 0;
+	HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+	if (snapshot != INVALID_HANDLE_VALUE) {
+		PROCESSENTRY32 entrada;
+		entrada.dwSize = sizeof(entrada);
+		if (Process32First(snapshot, &entrada)) {
+			do {
+				if (_wcsicmp(entrada.szExeFile, nomeProcesso) == 0) {
+					pid = entrada.th32ProcessID;
+					break;
+				}
+			} while (Process32Next(snapshot, &entrada));
+		}
+		CloseHandle(snapshot);
+	}
+	return pid;
+}
 
 int main()
 {
-    std::cout << "Hello World!\n";
+	DWORD PID = ObterPIDPorNome(L"bio4.exe"); // Nome do executavel do Resident Evil 4
+	DWORD valorMunicao = 151126256; //Valor da municao total
+
+	if (PID == 0) {
+		printf("Processo do Resident Evil 4 nao encontrado!\n");
+		return 1;
+	}
+
+	HANDLE processoResidentEvil = OpenProcess(PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION, FALSE, PID);
+	HMODULE moduloResidetEvil = NULL;
+	DWORD obrigatorio;
+
+	if (processoResidentEvil == NULL) {
+		printf("Nao foi possivel abrir o processo!\n");
+		return 1;
+	}
+
+	if (EnumProcessModules(processoResidentEvil, &moduloResidetEvil, sizeof(moduloResidetEvil), &obrigatorio)) {
+		MODULEINFO infoModuloResidentEvil;
+		if (GetModuleInformation(processoResidentEvil, moduloResidetEvil, &infoModuloResidentEvil, sizeof(infoModuloResidentEvil))) {
+
+			DWORD MemoriaBase = (DWORD)infoModuloResidentEvil.lpBaseOfDll;
+			DWORD segundaPosicao = MemoriaBase + 0x00870FE0;
+			DWORD valorSegundaPosicao;
+
+			if (ReadProcessMemory(processoResidentEvil, (LPCVOID)segundaPosicao, &valorSegundaPosicao, sizeof(valorSegundaPosicao), NULL)) {
+
+				int* ptr = (int*)valorSegundaPosicao;
+				ptr = (int*)((char*)ptr + 0x8);
+
+				while (1) {
+					if (WriteProcessMemory(processoResidentEvil, ptr, &valorMunicao, sizeof(valorMunicao), NULL)) {
+						printf("Valor da municao alterado com sucesso!\n");
+					}
+					else
+					{
+						printf("Nao foi possivel alterar o valor da memoria!\n");
+						CloseHandle(processoResidentEvil);
+						return 1;
+					}
+					Sleep(100);
+				}
+			}
+			else
+			{
+				printf("Nao foi possivel ler a memoria!\n");
+				CloseHandle(processoResidentEvil);
+				return 1;
+			}
+		}
+		else
+		{
+			printf("Nao foi possivel obter as informacoes do modulo!\n");
+			CloseHandle(processoResidentEvil);
+			return 1;
+		}
+	}
+	else
+	{
+		printf("Nao foi possivel obter as informacoes do modulo!\n");
+		CloseHandle(processoResidentEvil);
+		return 1;
+	}
+
+	CloseHandle(processoResidentEvil);
+	return 0;
 }
-
-// Run program: Ctrl + F5 or Debug > Start Without Debugging menu
-// Debug program: F5 or Debug > Start Debugging menu
-
-// Tips for Getting Started: 
-//   1. Use the Solution Explorer window to add/manage files
-//   2. Use the Team Explorer window to connect to source control
-//   3. Use the Output window to see build output and other messages
-//   4. Use the Error List window to view errors
-//   5. Go to Project > Add New Item to create new code files, or Project > Add Existing Item to add existing code files to the project
-//   6. In the future, to open this project again, go to File > Open > Project and select the .sln file
